@@ -252,13 +252,13 @@ fn record(cli: &Cli, stop: Arc<AtomicBool>) -> Result<()> {
             Err(e) => writer_error = Some(e),
         }
     }
-    if capture_error.is_none() {
-        if let Some(track) = meta.sources.iter().find(|t| t.duration_ms == 0) {
-            capture_error = Some(anyhow::anyhow!(
-                "No audio samples received from {}. Check device/permissions",
-                track.device
-            ));
-        }
+    if capture_error.is_none()
+        && let Some(track) = meta.sources.iter().find(|t| t.duration_ms == 0)
+    {
+        capture_error = Some(anyhow::anyhow!(
+            "No audio samples received from {}. Check device/permissions",
+            track.device
+        ));
     }
     meta.duration_ms = epoch.elapsed().as_millis() as u64;
     meta.status = if capture_error.is_some() || writer_error.is_some() {
