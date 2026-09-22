@@ -1,0 +1,38 @@
+[package]
+name = "audilog"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Local-first audio recording and speech transcription CLI"
+license = "MIT"
+repository = "https://github.com/zxdvd/audilog"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+cpal = "0.18.2"
+crossbeam-channel = "0.5"
+ctrlc = "3"
+directories = "6"
+hound = "3.5"
+indicatif = "0.18"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+rubato = "0.16.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+symphonia = { version = "0.5", features = ["aac", "mp3", "isomp4", "flac", "wav", "pcm", "ogg", "vorbis"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16", features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+whisper-rs = "0.16"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = true
