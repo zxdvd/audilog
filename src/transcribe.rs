@@ -77,7 +77,7 @@ pub fn run(
                     params.set_abort_callback(Some(abort_callback));
                     params.set_abort_callback_user_data(Arc::as_ptr(&cancelled).cast_mut().cast());
                 }
-                state.full(params, &pcm).context("Whisper failed; the saved audio can be retried with audilog transcribe SESSION")?;
+                state.full(params, &pcm).context("Whisper failed; retry saved audio with audilog transcribe SESSION (add --cpu if Metal fails)")?;
                 let base = track.start_offset_ms + base_samples * 1000 / RATE as u64;
                 let duration = chunk_len as u64 * 1000 / RATE as u64;
                 for seg in state.as_iter() {

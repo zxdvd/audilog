@@ -82,7 +82,11 @@ pub fn read_meta(dir: &Path) -> Result<Meta> {
     ensure!(meta.version == 1, "Unsupported session version");
     for t in &meta.sources {
         ensure!(
-            Path::new(&t.file).components().count() == 1 && !t.file.starts_with('.'),
+            matches!(
+                Path::new(&t.file).components().next(),
+                Some(std::path::Component::Normal(_))
+            ) && Path::new(&t.file).components().count() == 1
+                && !t.file.starts_with('.'),
             "Invalid track filename"
         );
     }

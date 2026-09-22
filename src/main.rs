@@ -87,6 +87,9 @@ fn main() {
 }
 fn run() -> Result<()> {
     let cli = Cli::parse();
+    if std::env::var_os("AUDILOG_DEBUG").is_none() {
+        whisper_rs::install_logging_hooks();
+    }
     if let Some(lang) = cli.language.as_deref() {
         ensure!(
             lang == "auto" || whisper_rs::get_lang_id(lang).is_some(),
@@ -191,6 +194,10 @@ fn record(cli: &Cli, stop: Arc<AtomicBool>) -> Result<()> {
             rx,
             failed.clone(),
         ));
+        eprintln!(
+            "Opening {:?}: {} (allow any system permission prompt)…",
+            cap.source, cap.name
+        );
         if let Err(e) = cap.start(tx, clock.clone()) {
             capture_error = Some(e);
             break;
@@ -243,6 +250,14 @@ fn record(cli: &Cli, stop: Arc<AtomicBool>) -> Result<()> {
                 meta.sources[i] = t;
             }
             Err(e) => writer_error = Some(e),
+        }
+    }
+    if capture_error.is_none() {
+        if let Some(track) = meta.sources.iter().find(|t| t.duration_ms == 0) {
+            capture_error = Some(anyhow::anyhow!(
+                "No audio samples received from {}. Check device/permissions",
+                track.device
+            ));
         }
     }
     meta.duration_ms = epoch.elapsed().as_millis() as u64;
@@ -367,6 +382,10 @@ fn doctor(cli: &Cli, stop: Arc<AtomicBool>) -> Result<()> {
             let mut cap = CpalCapture::new(source, cli.input.as_deref())?;
             let (tx, rx) = crossbeam_channel::bounded(256);
             let clock = Arc::new(OnceLock::new());
+            eprintln!(
+                "Opening {source:?}: {} (allow any system permission prompt)…",
+                cap.name
+            );
             cap.start(tx, clock.clone())?;
             let start = Instant::now();
             let _ = clock.set(start);
