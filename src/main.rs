@@ -11,7 +11,7 @@ use session::{AudioSource, Meta, Track};
 use std::{
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -178,7 +178,7 @@ fn record(cli: &Cli, stop: Arc<AtomicBool>) -> Result<()> {
         });
     }
     session::save_meta(&dir, &meta)?;
-    let epoch = Instant::now();
+    let clock = Arc::new(OnceLock::new());
     let failed = Arc::new(AtomicBool::new(false));
     let mut workers = Vec::new();
     let mut capture_error = None;
@@ -191,11 +191,15 @@ fn record(cli: &Cli, stop: Arc<AtomicBool>) -> Result<()> {
             rx,
             failed.clone(),
         ));
-        if let Err(e) = cap.start(tx, epoch) {
+        if let Err(e) = cap.start(tx, clock.clone()) {
             capture_error = Some(e);
             break;
         }
     }
+    let epoch = Instant::now();
+    let _ = clock.set(epoch);
+    meta.started_at = chrono::Local::now().to_rfc3339();
+    session::save_meta(&dir, &meta)?;
     if capture_error.is_none() {
         println!("● Recording… Ctrl+C to stop and transcribe.");
         while !stop.load(Ordering::Relaxed) && !failed.load(Ordering::Relaxed) {
@@ -362,8 +366,10 @@ fn doctor(cli: &Cli, stop: Arc<AtomicBool>) -> Result<()> {
         let result = (|| -> Result<(String, usize, f32)> {
             let mut cap = CpalCapture::new(source, cli.input.as_deref())?;
             let (tx, rx) = crossbeam_channel::bounded(256);
-            cap.start(tx, Instant::now())?;
+            let clock = Arc::new(OnceLock::new());
+            cap.start(tx, clock.clone())?;
             let start = Instant::now();
+            let _ = clock.set(start);
             let mut count = 0;
             let mut peak = 0.0f32;
             while start.elapsed() < Duration::from_secs(3) && !stop.load(Ordering::Relaxed) {

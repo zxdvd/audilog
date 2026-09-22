@@ -69,8 +69,14 @@ pub fn run(
                 params.set_print_progress(false);
                 params.set_print_realtime(false);
                 params.set_print_timestamps(false);
-                let abort = cancelled.clone();
-                params.set_abort_callback_safe(move || abort.load(Ordering::Relaxed));
+                // whisper-rs 0.16's closure adapter casts a boxed trait object to
+                // the closure type. Use the C callback with a stable AtomicBool instead.
+                // SAFETY: cancelled owns this atomic throughout synchronous state.full;
+                // the callback only performs a thread-safe load and never unwinds.
+                unsafe {
+                    params.set_abort_callback(Some(abort_callback));
+                    params.set_abort_callback_user_data(Arc::as_ptr(&cancelled).cast_mut().cast());
+                }
                 state.full(params, &pcm).context("Whisper failed; the saved audio can be retried with audilog transcribe SESSION")?;
                 let base = track.start_offset_ms + base_samples * 1000 / RATE as u64;
                 let duration = chunk_len as u64 * 1000 / RATE as u64;
@@ -103,4 +109,22 @@ pub fn run(
         dir.join("transcript.md").display()
     );
     Ok(())
+}
+
+unsafe extern "C" fn abort_callback(data: *mut std::ffi::c_void) -> bool {
+    // SAFETY: run supplies a live AtomicBool for the entire inference call.
+    unsafe { &*data.cast::<AtomicBool>() }.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn abort_callback_reads_only_the_owned_atomic() {
+        let flag = AtomicBool::new(false);
+        let ptr = (&flag as *const AtomicBool).cast_mut().cast();
+        assert!(!unsafe { abort_callback(ptr) });
+        flag.store(true, Ordering::Relaxed);
+        assert!(unsafe { abort_callback(ptr) });
+    }
 }

@@ -11,7 +11,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::{
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -26,7 +26,7 @@ pub struct AudioFrame {
     pub samples: Vec<f32>,
 }
 pub trait AudioCapture {
-    fn start(&mut self, tx: Sender<AudioFrame>, epoch: Instant) -> Result<()>;
+    fn start(&mut self, tx: Sender<AudioFrame>, clock: Arc<OnceLock<Instant>>) -> Result<()>;
     fn stop(&mut self) -> Result<()>;
 }
 pub struct CpalCapture {
@@ -85,7 +85,11 @@ impl CpalCapture {
             frames: Arc::new(AtomicU64::new(0)),
         })
     }
-    fn build<T>(&self, tx: Sender<AudioFrame>, epoch: Instant) -> Result<cpal::Stream>
+    fn build<T>(
+        &self,
+        tx: Sender<AudioFrame>,
+        clock: Arc<OnceLock<Instant>>,
+    ) -> Result<cpal::Stream>
     where
         T: SizedSample,
         f32: FromSample<T>,
@@ -100,6 +104,9 @@ impl CpalCapture {
         Ok(self.device.build_input_stream(
             self.config.config(),
             move |data: &[T], info| {
+                let Some(epoch) = clock.get() else {
+                    return;
+                };
                 let n = data.len() as u64 / channels as u64;
                 let ts = info.timestamp();
                 let latency = ts.callback.duration_since(ts.capture);
@@ -126,18 +133,18 @@ impl CpalCapture {
     }
 }
 impl AudioCapture for CpalCapture {
-    fn start(&mut self, tx: Sender<AudioFrame>, epoch: Instant) -> Result<()> {
+    fn start(&mut self, tx: Sender<AudioFrame>, clock: Arc<OnceLock<Instant>>) -> Result<()> {
         let stream = match self.config.sample_format() {
-            SampleFormat::F32 => self.build::<f32>(tx, epoch)?,
-            SampleFormat::F64 => self.build::<f64>(tx, epoch)?,
-            SampleFormat::I8 => self.build::<i8>(tx, epoch)?,
-            SampleFormat::I16 => self.build::<i16>(tx, epoch)?,
-            SampleFormat::I32 => self.build::<i32>(tx, epoch)?,
-            SampleFormat::I64 => self.build::<i64>(tx, epoch)?,
-            SampleFormat::U8 => self.build::<u8>(tx, epoch)?,
-            SampleFormat::U16 => self.build::<u16>(tx, epoch)?,
-            SampleFormat::U32 => self.build::<u32>(tx, epoch)?,
-            SampleFormat::U64 => self.build::<u64>(tx, epoch)?,
+            SampleFormat::F32 => self.build::<f32>(tx, clock)?,
+            SampleFormat::F64 => self.build::<f64>(tx, clock)?,
+            SampleFormat::I8 => self.build::<i8>(tx, clock)?,
+            SampleFormat::I16 => self.build::<i16>(tx, clock)?,
+            SampleFormat::I32 => self.build::<i32>(tx, clock)?,
+            SampleFormat::I64 => self.build::<i64>(tx, clock)?,
+            SampleFormat::U8 => self.build::<u8>(tx, clock)?,
+            SampleFormat::U16 => self.build::<u16>(tx, clock)?,
+            SampleFormat::U32 => self.build::<u32>(tx, clock)?,
+            SampleFormat::U64 => self.build::<u64>(tx, clock)?,
             f => bail!("Unsupported sample format: {f}"),
         };
         stream.play()?;
